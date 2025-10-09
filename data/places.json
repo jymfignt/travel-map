@@ -8,7 +8,7 @@
   { "year": null, "name": "Xi'an", "lat": 34.3416, "lng": 108.9398, "note": "暑假游", "type": "region", "bounds": [[33.4, 105.3], [37.0, 111.0]] },
   { "year": null, "name": "Xianyang", "lat": 34.6114, "lng": 108.4549, "note": "暑假游", "type": "point" },
   { "year": null, "name": "Hongtong, Shanxi", "lat": 36.2553, "lng": 111.6737, "note": "暑假游", "type": "point" },
-  { "year": null, "name": "Luoyang", "lat": 34.6197, "lng": 112.4540, "note": "暑假游", "type": "point" },
+  { "year": null, "name": "Luoyang", "lat": 34.6197, "lng": 112.454, "note": "暑假游", "type": "point" },
   { "year": null, "name": "Handan", "lat": 36.6256, "lng": 114.5389, "note": "暑假游", "type": "point" },
   { "year": null, "name": "Taiyuan", "lat": 37.8706, "lng": 112.5489, "note": "暑假游", "type": "region", "bounds": [[34.5, 110.2], [40.7, 114.6]] },
   { "year": null, "name": "Pingyao", "lat": 37.1898, "lng": 112.1763, "note": "暑假游", "type": "point" },
