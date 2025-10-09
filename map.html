@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>旅行地图时间线</title>
+  <title>旅行地图时间线（调试版）</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body {
@@ -26,23 +26,27 @@
       font-size: 14px;
       font-family: sans-serif;
       z-index: 1000;
-      animation: fadeIn 2s ease;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
+    .error {
+      background: rgba(255, 0, 0, 0.8);
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div class="note">🗺 正在自动播放旅行轨迹...</div>
+  <div class="note" id="note">🗺 正在加载 data/places.json ...</div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map', { zoomControl: false }).setView([30, 110], 4);
+    const note = document.getElementById('note');
 
-    // 基础地图层
+    function showMessage(msg, isError = false) {
+      note.textContent = msg;
+      note.className = 'note' + (isError ? ' error' : '');
+      console.log(msg);
+    }
+
+    const map = L.map('map', { zoomControl: false }).setView([30, 110], 4);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
@@ -50,33 +54,63 @@
     let places = [];
     let layers = [];
 
-    // 从 JSON 文件加载数据
-    fetch('data/places.json')
-      .then(res => res.json())
-      .then(data => {
-        // 按年份排序（null 的排在前面）
-        places = data.sort((a, b) => (a.year || 0) - (b.year || 0));
+    async function loadData() {
+      try {
+        showMessage('📦 正在加载 data/places.json ...');
+        const res = await fetch('data/places.json');
+        if (!res.ok) throw new Error(`HTTP 状态 ${res.status}`);
+        const text = await res.text();
+
+        try {
+          // 检查是否为合法 JSON
+          places = JSON.parse(text);
+        } catch (jsonErr) {
+          showMessage('❌ JSON 解析失败，请检查文件格式（末尾多余字符？）', true);
+          console.error('JSON 内容：', text.slice(0, 500) + '...');
+          throw jsonErr;
+        }
+
+        if (!Array.isArray(places)) {
+          throw new Error('JSON 根节点不是数组');
+        }
+
+        // 基本结构检查
+        for (let i = 0; i < Math.min(places.length, 3); i++) {
+          const p = places[i];
+          if (typeof p.lat !== 'number' || typeof p.lng !== 'number') {
+            console.warn(`第 ${i+1} 条数据可能格式错误：`, p);
+          }
+        }
+
+        showMessage(`✅ 成功加载 ${places.length} 条记录，开始播放动画...`);
         startAnimation();
-      })
-      .catch(err => console.error('加载 data/places.json 失败:', err));
+
+      } catch (err) {
+        console.error(err);
+        showMessage('❌ 数据加载失败: ' + err.message, true);
+      }
+    }
 
     async function startAnimation() {
+      // 按年份排序
+      places.sort((a, b) => (a.year || 0) - (b.year || 0));
+
       for (let i = 0; i < places.length; i++) {
         const p = places[i];
         addPlaceToMap(p);
 
-        // 平滑飞行到该点或区域
         if (p.type === 'region' && p.bounds) {
           map.flyToBounds(p.bounds, { duration: 2 });
         } else {
           map.flyTo([p.lat, p.lng], 6, { duration: 2 });
         }
 
-        await sleep(3000); // 每个点停留 3 秒
+        showMessage(`📍 ${p.name} (${p.year || '未知年份'}) - ${p.note || ''}`);
+        await sleep(3000);
       }
 
-      // 播放完后回到总览
       map.flyTo([30, 110], 4, { duration: 4 });
+      showMessage('🎉 播放结束！');
     }
 
     function addPlaceToMap(p) {
@@ -108,7 +142,6 @@
       layers.push(layer);
     }
 
-    // 圆点动画：半径逐渐增大
     function animateCircleGrowth(layer) {
       let radius = 0;
       const target = 6;
@@ -120,7 +153,6 @@
       }, 30);
     }
 
-    // 区域动画：透明度渐显
     function animateRectangleFade(layer) {
       let opacity = 0;
       const step = 0.05;
@@ -134,6 +166,8 @@
     function sleep(ms) {
       return new Promise(r => setTimeout(r, ms));
     }
+
+    loadData();
   </script>
 </body>
 </html>
