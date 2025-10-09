@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Travel Map</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="css/map.css" />
+  <style>
+    body, html {
+      margin: 0;
+      height: 100%;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+
+    .slider-container {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    input[type=range] {
+      width: 300px;
+    }
+
+    #year-label {
+      font-weight: bold;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <div class="slider-container">
+    <label for="year">Year:</label>
+    <input type="range" id="year" min="2000" max="2025" value="2010" />
+    <span id="year-label">2010</span>
+  </div>
+
+  <script>
+    // Initialize map
+    const map = L.map('map').setView([20, 0], 2); // start global view
+
+    // Add tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let places = [];
+
+    // Load JSON data
+    fetch('data/places.json')
+      .then(res => res.json())
+      .then(data => {
+        places = data;
+        // Add markers
+        data.forEach(p => {
+          const marker = L.marker([p.lat, p.lng]).addTo(map);
+          marker.bindPopup(`<b>${p.name}</b><br>${p.year}<br>${p.note}`);
+        });
+      });
+
+    // Handle year slider
+    const slider = document.getElementById('year');
+    const label = document.getElementById('year-label');
+
+    slider.addEventListener('input', () => {
+      const year = parseInt(slider.value);
+      label.textContent = year;
+
+      // Find closest place
+      if (places.length > 0) {
+        const nearest = places.reduce((prev, curr) =>
+          Math.abs(curr.year - year) < Math.abs(prev.year - year) ? curr : prev
+        );
+
+        map.flyTo([nearest.lat, nearest.lng], 6, { duration: 1.5 });
+      }
+    });
+  </script>
+</body>
+</html>
