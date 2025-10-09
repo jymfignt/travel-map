@@ -2,18 +2,11 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>旅行地图时间线（圆形版）</title>
+  <title>旅行地图时间线（圆形区域 + 动画版）</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-    }
-    #map {
-      width: 100%;
-      height: 100%;
-    }
+    html, body { height: 100%; margin: 0; padding: 0; }
+    #map { width: 100%; height: 100%; }
     .note {
       position: fixed;
       top: 10px;
@@ -27,9 +20,7 @@
       font-family: sans-serif;
       z-index: 1000;
     }
-    .error {
-      background: rgba(255, 0, 0, 0.8);
-    }
+    .error { background: rgba(255, 0, 0, 0.8); }
   </style>
 </head>
 <body>
@@ -39,13 +30,13 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const note = document.getElementById('note');
-
     function showMessage(msg, isError = false) {
       note.textContent = msg;
       note.className = 'note' + (isError ? ' error' : '');
       console.log(msg);
     }
 
+    // 初始化地图
     const map = L.map('map', { zoomControl: false }).setView([30, 110], 4);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
@@ -54,6 +45,7 @@
     let places = [];
     let layers = [];
 
+    // 加载数据
     async function loadData() {
       try {
         showMessage('📦 正在加载 data/places.json ...');
@@ -64,32 +56,35 @@
         try {
           places = JSON.parse(text);
         } catch (jsonErr) {
-          showMessage('❌ JSON 解析失败，请检查文件格式（末尾多余字符？）', true);
-          console.error('JSON 内容预览：', text.slice(0, 500) + '...');
+          showMessage('❌ JSON 解析失败，请检查文件格式', true);
+          console.error('JSON 内容（前500字）：', text.slice(0, 500) + '...');
           throw jsonErr;
         }
 
         if (!Array.isArray(places)) throw new Error('JSON 根节点不是数组');
+
         showMessage(`✅ 成功加载 ${places.length} 条记录，开始播放动画...`);
         startAnimation();
-
       } catch (err) {
         console.error(err);
         showMessage('❌ 数据加载失败: ' + err.message, true);
       }
     }
 
+    // 自动播放动画
     async function startAnimation() {
-      // 按年份排序（null 放后面）
-      places.sort((a, b) => (a.year || 9999) - (b.year || 9999));
+      // 按年份排序（无年份的放前）
+      places.sort((a, b) => (a.year || 0) - (b.year || 0));
 
-      for (let i = 0; i < places.length; i++) {
-        const p = places[i];
+      for (let p of places) {
         addPlaceToMap(p);
 
-        // 飞行动画
-        map.flyTo([p.lat, p.lng], p.type === 'point' ? 6 : 5, { duration: 2 });
-        showMessage(`📍 ${p.name} (${p.year || '未知年份'}) - ${p.note || ''}`);
+        // 自动飞行动画
+        if (p.lat && p.lng) {
+          map.flyTo([p.lat, p.lng], 6, { duration: 2 });
+        }
+
+        showMessage(`📍 ${p.name} (${p.year ?? '未知年份'}) - ${p.note ?? ''}`);
         await sleep(3000);
       }
 
@@ -97,12 +92,13 @@
       showMessage('🎉 播放结束！');
     }
 
+    // 添加地点到地图
     function addPlaceToMap(p) {
       let layer;
-      const popupContent = `<b>${p.name}</b><br>${p.note || ''}${p.year ? `<br><i>${p.year}</i>` : ''}`;
+      const popup = `<b>${p.name}</b><br>${p.note ?? ''}${p.year ? `<br><i>${p.year}</i>` : ''}`;
 
+      // 圆点（单个坐标）
       if (p.type === 'point') {
-        // 小圆点
         layer = L.circleMarker([p.lat, p.lng], {
           radius: 0,
           fillColor: '#ff5722',
@@ -110,43 +106,47 @@
           weight: 1,
           opacity: 0.9,
           fillOpacity: 0.7
-        }).bindPopup(popupContent);
+        }).bindPopup(popup);
         layer.addTo(map);
-        animateCircleGrowth(layer);
+        animatePoint(layer);
+      }
 
-      } else if (p.type === 'circle' && p.radius) {
-        // 区域圆形
+      // 圆形区域（带半径）
+      else if (p.type === 'circle') {
+        const radius = (p.radius || 100) * 1000; // km → m
         layer = L.circle([p.lat, p.lng], {
-          radius: p.radius * 1000,
+          radius: radius,
           color: '#4caf50',
           weight: 1,
+          fillColor: '#81c784',
           fillOpacity: 0
-        }).bindPopup(popupContent);
+        }).bindPopup(popup);
         layer.addTo(map);
-        animateRegionFade(layer);
+        animateRegion(layer);
       }
 
       layers.push(layer);
     }
 
-    function animateCircleGrowth(layer) {
-      let radius = 0;
-      const target = 6;
-      const step = 0.4;
-      const interval = setInterval(() => {
-        radius += step;
-        layer.setRadius(radius);
-        if (radius >= target) clearInterval(interval);
+    // 动画函数：点的生长
+    function animatePoint(layer) {
+      let r = 0;
+      const target = 6, step = 0.4;
+      const timer = setInterval(() => {
+        r += step;
+        layer.setRadius(r);
+        if (r >= target) clearInterval(timer);
       }, 30);
     }
 
-    function animateRegionFade(layer) {
-      let opacity = 0;
+    // 动画函数：区域淡入
+    function animateRegion(layer) {
+      let op = 0;
       const step = 0.05;
-      const interval = setInterval(() => {
-        opacity += step;
-        layer.setStyle({ fillOpacity: opacity * 0.3 });
-        if (opacity >= 1) clearInterval(interval);
+      const timer = setInterval(() => {
+        op += step;
+        layer.setStyle({ fillOpacity: op * 0.4 });
+        if (op >= 1) clearInterval(timer);
       }, 50);
     }
 
