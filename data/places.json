@@ -27,4 +27,4 @@
   { "year": 2024.8, "name": "Beijing", "lat": 39.9042, "lng": 116.4074, "note": "旅行（张家口）", "type": "region", "bounds": [[39.4, 115.4], [41.1, 117.5]] },
   { "year": 2025.1, "name": "Shanghai, Suzhou, Hangzhou", "lat": 31.2304, "lng": 121.4737, "note": "寒假旅行 (上海, 苏州, 杭州)", "type": "region", "bounds": [[28.0, 118.0], [33.0, 123.0]] },
   { "year": 2025.3, "name": "Taiwan", "lat": 25.033, "lng": 121.5654, "note": "台湾旅行 (台北, 台南, 高雄)", "type": "region", "bounds": [[21.9, 120.0], [25.3, 122.0]] }
-];
+]
