@@ -1,128 +1,149 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Travel Map Timeline</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    html, body { height: 100%; margin: 0; padding: 0; }
-    #map { width: 100%; height: calc(100% - 60px); }
-    #controls {
-      position: fixed;
-      bottom: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(255,255,255,0.9);
-      border-radius: 12px;
-      padding: 10px 20px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-family: sans-serif;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
-    }
-    input[type=range] { width: 300px; }
-    .note {
-      position: fixed;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.6);
-      color: white;
-      padding: 6px 10px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-family: sans-serif;
-    }
-  </style>
+<meta charset="UTF-8" />
+<title>Travel Map Timeline</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+<style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
+  #map {
+    width: 100%;
+    height: 100%;
+  }
+  .year-slider {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.85);
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-family: sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  input[type="range"] {
+    width: 200px;
+  }
+</style>
 </head>
 <body>
-  <div id="map"></div>
-  <div id="controls">
-    <label for="yearSlider">Year:</label>
-    <input id="yearSlider" type="range" min="2000" max="2025" value="2005" step="0.1">
-    <span id="yearDisplay">2005</span>
-  </div>
-  <div class="note">🗺 滑动年份查看旅行轨迹</div>
+<div id="map"></div>
+<div class="year-slider">
+  <label>Year:</label>
+  <input type="range" id="yearRange" min="2000" max="2025" step="0.1" value="2005.8">
+  <span id="currentYear">2005.8</span>
+  <button id="playBtn">▶</button>
+</div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    const map = L.map('map').setView([30, 110], 4);
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+async function initMap() {
+  const map = L.map('map').setView([35, 110], 4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+  // 读取JSON数据
+  const response = await fetch('./data/places.json');
+  const places = await response.json();
 
-    let places = [];
-    let layers = [];
+  // 提取年份并排序
+  const validPlaces = places.filter(p => p.year !== null).sort((a, b) => a.year - b.year);
+  const minYear = Math.floor(Math.min(...validPlaces.map(p => p.year)));
+  const maxYear = Math.ceil(Math.max(...validPlaces.map(p => p.year)));
 
-    // 加载 JSON 数据
-    fetch('data/places.json')
-      .then(res => res.json())
-      .then(data => {
-        places = data.sort((a, b) => (a.year || 0) - (b.year || 0));
-        initTimeline();
-      })
-      .catch(err => console.error('加载 data/places.json 失败:', err));
+  const yearRange = document.getElementById('yearRange');
+  const yearLabel = document.getElementById('currentYear');
+  yearRange.min = minYear;
+  yearRange.max = maxYear;
+  yearRange.value = minYear;
+  yearLabel.textContent = minYear;
 
-    function initTimeline() {
-      const slider = document.getElementById('yearSlider');
-      const yearDisplay = document.getElementById('yearDisplay');
+  // 存储已显示的图层
+  const layers = [];
 
-      slider.min = Math.floor(Math.min(...places.map(p => p.year || 2000)));
-      slider.max = Math.ceil(Math.max(...places.map(p => p.year || 2025)));
+  function colorByType(type) {
+    return type === 'region' ? 'rgba(0, 150, 255, 0.4)' : '#ff4b4b';
+  }
 
-      slider.addEventListener('input', () => {
-        const year = parseFloat(slider.value);
-        yearDisplay.textContent = year.toFixed(1);
-        updateMap(year);
-      });
-
-      // 初始状态
-      updateMap(parseFloat(slider.value));
+  function drawPlace(place, fade = false) {
+    if (place.type === 'region' && place.bounds) {
+      const rect = L.rectangle(place.bounds, {
+        color: fade ? '#ccc' : colorByType('region'),
+        weight: 1,
+        fillOpacity: fade ? 0.2 : 0.5
+      }).addTo(map);
+      rect.bindPopup(`<b>${place.name}</b><br>${place.note}`);
+      layers.push({ year: place.year, layer: rect });
+    } else {
+      const circle = L.circleMarker([place.lat, place.lng], {
+        radius: fade ? 4 : 7,
+        color: fade ? '#999' : colorByType('point'),
+        fillOpacity: fade ? 0.4 : 0.8
+      }).addTo(map);
+      circle.bindPopup(`<b>${place.name}</b><br>${place.note}`);
+      layers.push({ year: place.year, layer: circle });
     }
+  }
 
-    function updateMap(year) {
-      // 清除旧层
-      layers.forEach(l => map.removeLayer(l));
-      layers = [];
+  // 初始绘制全部，灰色为旧地点
+  places.forEach(p => drawPlace(p, true));
 
-      const visible = places.filter(p => !p.year || p.year <= year);
-
-      visible.forEach(p => {
-        if (p.type === 'point') {
-          const circle = L.circleMarker(p.coords, {
-            radius: 6,
-            fillColor: '#ff5722',
-            color: '#ff7043',
-            weight: 1,
-            opacity: 0.9,
-            fillOpacity: 0.7
-          }).bindPopup(`<b>${p.name}</b><br>${p.note || ''}`);
-          circle.addTo(map);
-          layers.push(circle);
-
-        } else if (p.type === 'region' && p.bounds) {
-          const rect = L.rectangle(p.bounds, {
-            color: '#4caf50',
-            weight: 1,
-            fillOpacity: 0.25
-          }).bindPopup(`<b>${p.name}</b><br>${p.note || ''}`);
-          rect.addTo(map);
-          layers.push(rect);
-        }
-      });
-
-      // 飞行到最新点或区域
-      const latest = visible[visible.length - 1];
-      if (latest) {
-        if (latest.type === 'region' && latest.bounds) {
-          map.flyToBounds(latest.bounds, { duration: 2 });
-        } else {
-          map.flyTo(latest.coords, 6, { duration: 2 });
-        }
+  // 动态显示当前年份的地点
+  function updateMap(year) {
+    yearLabel.textContent = year;
+    layers.forEach(({ year: y, layer }) => {
+      if (y !== null && y <= year) {
+        layer.setStyle({ color: colorByType(layer instanceof L.Rectangle ? 'region' : 'point'), fillOpacity: 0.6 });
+      } else {
+        layer.setStyle({ color: '#999', fillOpacity: 0.2 });
       }
+    });
+
+    // 飞行到最新地点
+    const latest = validPlaces.filter(p => p.year <= year).slice(-1)[0];
+    if (latest) map.flyTo([latest.lat, latest.lng], 6, { duration: 1.2 });
+  }
+
+  yearRange.addEventListener('input', e => {
+    const y = parseFloat(e.target.value);
+    updateMap(y);
+  });
+
+  // 自动播放
+  let playing = false;
+  const playBtn = document.getElementById('playBtn');
+  playBtn.addEventListener('click', () => {
+    playing = !playing;
+    playBtn.textContent = playing ? '⏸' : '▶';
+    if (playing) animateYears();
+  });
+
+  async function animateYears() {
+    for (let y = parseFloat(yearRange.value); y <= maxYear; y += 0.2) {
+      if (!playing) break;
+      yearRange.value = y.toFixed(1);
+      updateMap(y);
+      await new Promise(r => setTimeout(r, 500));
     }
-  </script>
+    playing = false;
+    playBtn.textContent = '▶';
+  }
+
+  updateMap(minYear);
+}
+
+initMap();
+</script>
 </body>
 </html>
