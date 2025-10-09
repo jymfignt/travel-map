@@ -13,37 +13,30 @@
     margin: 0;
     padding: 0;
     height: 100%;
+    overflow: hidden;
   }
   #map {
     width: 100%;
     height: 100%;
   }
-  .year-slider {
+  .year-label {
     position: absolute;
-    bottom: 20px;
+    top: 20px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(255, 255, 255, 0.85);
-    padding: 8px 16px;
-    border-radius: 10px;
-    font-family: sans-serif;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  input[type="range"] {
-    width: 200px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 1.5em;
+    padding: 6px 18px;
+    border-radius: 8px;
+    font-family: "Segoe UI", sans-serif;
+    z-index: 1000;
   }
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="year-slider">
-  <label>Year:</label>
-  <input type="range" id="yearRange" min="2000" max="2025" step="0.1" value="2005.8">
-  <span id="currentYear">2005.8</span>
-  <button id="playBtn">▶</button>
-</div>
+<div class="year-label" id="yearLabel">Loading...</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -53,94 +46,77 @@ async function initMap() {
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  // 读取JSON数据
   const response = await fetch('./data/places.json');
   const places = await response.json();
 
-  // 提取年份并排序
+  // 按年份排序（过滤掉没有年份的）
   const validPlaces = places.filter(p => p.year !== null).sort((a, b) => a.year - b.year);
-  const minYear = Math.floor(Math.min(...validPlaces.map(p => p.year)));
-  const maxYear = Math.ceil(Math.max(...validPlaces.map(p => p.year)));
-
-  const yearRange = document.getElementById('yearRange');
-  const yearLabel = document.getElementById('currentYear');
-  yearRange.min = minYear;
-  yearRange.max = maxYear;
-  yearRange.value = minYear;
-  yearLabel.textContent = minYear;
-
-  // 存储已显示的图层
+  const allPlaces = [...places]; // 包含没有年份的
   const layers = [];
+  const yearLabel = document.getElementById('yearLabel');
 
   function colorByType(type) {
-    return type === 'region' ? 'rgba(0, 150, 255, 0.4)' : '#ff4b4b';
+    return type === 'region' ? 'rgba(0,150,255,0.5)' : '#ff4b4b';
   }
 
-  function drawPlace(place, fade = false) {
+  // 绘制所有点和区域（初始灰色）
+  allPlaces.forEach(place => {
     if (place.type === 'region' && place.bounds) {
       const rect = L.rectangle(place.bounds, {
-        color: fade ? '#ccc' : colorByType('region'),
+        color: '#999',
         weight: 1,
-        fillOpacity: fade ? 0.2 : 0.5
+        fillOpacity: 0.15
       }).addTo(map);
       rect.bindPopup(`<b>${place.name}</b><br>${place.note}`);
-      layers.push({ year: place.year, layer: rect });
+      layers.push({ year: place.year, layer: rect, type: 'region' });
     } else {
-      const circle = L.circleMarker([place.lat, place.lng], {
-        radius: fade ? 4 : 7,
-        color: fade ? '#999' : colorByType('point'),
-        fillOpacity: fade ? 0.4 : 0.8
+      const marker = L.circleMarker([place.lat, place.lng], {
+        radius: 6,
+        color: '#aaa',
+        fillOpacity: 0.4
       }).addTo(map);
-      circle.bindPopup(`<b>${place.name}</b><br>${place.note}`);
-      layers.push({ year: place.year, layer: circle });
+      marker.bindPopup(`<b>${place.name}</b><br>${place.note}`);
+      layers.push({ year: place.year, layer: marker, type: 'point' });
     }
-  }
-
-  // 初始绘制全部，灰色为旧地点
-  places.forEach(p => drawPlace(p, true));
-
-  // 动态显示当前年份的地点
-  function updateMap(year) {
-    yearLabel.textContent = year;
-    layers.forEach(({ year: y, layer }) => {
-      if (y !== null && y <= year) {
-        layer.setStyle({ color: colorByType(layer instanceof L.Rectangle ? 'region' : 'point'), fillOpacity: 0.6 });
-      } else {
-        layer.setStyle({ color: '#999', fillOpacity: 0.2 });
-      }
-    });
-
-    // 飞行到最新地点
-    const latest = validPlaces.filter(p => p.year <= year).slice(-1)[0];
-    if (latest) map.flyTo([latest.lat, latest.lng], 6, { duration: 1.2 });
-  }
-
-  yearRange.addEventListener('input', e => {
-    const y = parseFloat(e.target.value);
-    updateMap(y);
   });
 
-  // 自动播放
-  let playing = false;
-  const playBtn = document.getElementById('playBtn');
-  playBtn.addEventListener('click', () => {
-    playing = !playing;
-    playBtn.textContent = playing ? '⏸' : '▶';
-    if (playing) animateYears();
-  });
-
+  // 动画播放函数
   async function animateYears() {
-    for (let y = parseFloat(yearRange.value); y <= maxYear; y += 0.2) {
-      if (!playing) break;
-      yearRange.value = y.toFixed(1);
-      updateMap(y);
-      await new Promise(r => setTimeout(r, 500));
+    for (const place of validPlaces) {
+      const currentYear = place.year;
+      yearLabel.textContent = `${currentYear.toFixed(1)} — ${place.name}`;
+
+      // 更新颜色
+      layers.forEach(({ year, layer, type }) => {
+        if (year !== null && year <= currentYear) {
+          layer.setStyle({
+            color: colorByType(type),
+            fillOpacity: type === 'region' ? 0.5 : 0.8
+          });
+        } else {
+          layer.setStyle({
+            color: '#999',
+            fillOpacity: 0.15
+          });
+        }
+      });
+
+      // 飞行到当前地点
+      map.flyTo([place.lat, place.lng], 6, { duration: 1.5 });
+      await new Promise(r => setTimeout(r, 2000)); // 每步停2秒
     }
-    playing = false;
-    playBtn.textContent = '▶';
+
+    // 播放完后展示所有彩色层
+    yearLabel.textContent = "All Journeys";
+    layers.forEach(({ layer, type }) => {
+      layer.setStyle({
+        color: colorByType(type),
+        fillOpacity: type === 'region' ? 0.5 : 0.8
+      });
+    });
   }
 
-  updateMap(minYear);
+  animateYears();
 }
 
 initMap();
