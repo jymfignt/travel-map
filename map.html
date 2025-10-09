@@ -1,125 +1,139 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-<meta charset="UTF-8" />
-<title>Travel Map Timeline</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-/>
-<style>
-  body, html {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    overflow: hidden;
-  }
-  #map {
-    width: 100%;
-    height: 100%;
-  }
-  .year-label {
-    position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.6);
-    color: white;
-    font-size: 1.5em;
-    padding: 6px 18px;
-    border-radius: 8px;
-    font-family: "Segoe UI", sans-serif;
-    z-index: 1000;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <title>旅行地图时间线</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    .note {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: sans-serif;
+      z-index: 1000;
+      animation: fadeIn 2s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+  </style>
 </head>
 <body>
-<div id="map"></div>
-<div class="year-label" id="yearLabel">Loading...</div>
+  <div id="map"></div>
+  <div class="note">🗺 正在自动播放旅行轨迹...</div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-async function initMap() {
-  const map = L.map('map').setView([35, 110], 4);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map', { zoomControl: false }).setView([30, 110], 4);
 
-  const response = await fetch('./data/places.json');
-  const places = await response.json();
+    // 基础地图层
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
 
-  // 按年份排序（过滤掉没有年份的）
-  const validPlaces = places.filter(p => p.year !== null).sort((a, b) => a.year - b.year);
-  const allPlaces = [...places]; // 包含没有年份的
-  const layers = [];
-  const yearLabel = document.getElementById('yearLabel');
+    let places = [];
+    let layers = [];
 
-  function colorByType(type) {
-    return type === 'region' ? 'rgba(0,150,255,0.5)' : '#ff4b4b';
-  }
+    // 从 JSON 文件加载数据
+    fetch('data/places.json')
+      .then(res => res.json())
+      .then(data => {
+        // 按年份排序（null 的排在前面）
+        places = data.sort((a, b) => (a.year || 0) - (b.year || 0));
+        startAnimation();
+      })
+      .catch(err => console.error('加载 data/places.json 失败:', err));
 
-  // 绘制所有点和区域（初始灰色）
-  allPlaces.forEach(place => {
-    if (place.type === 'region' && place.bounds) {
-      const rect = L.rectangle(place.bounds, {
-        color: '#999',
-        weight: 1,
-        fillOpacity: 0.15
-      }).addTo(map);
-      rect.bindPopup(`<b>${place.name}</b><br>${place.note}`);
-      layers.push({ year: place.year, layer: rect, type: 'region' });
-    } else {
-      const marker = L.circleMarker([place.lat, place.lng], {
-        radius: 6,
-        color: '#aaa',
-        fillOpacity: 0.4
-      }).addTo(map);
-      marker.bindPopup(`<b>${place.name}</b><br>${place.note}`);
-      layers.push({ year: place.year, layer: marker, type: 'point' });
-    }
-  });
+    async function startAnimation() {
+      for (let i = 0; i < places.length; i++) {
+        const p = places[i];
+        addPlaceToMap(p);
 
-  // 动画播放函数
-  async function animateYears() {
-    for (const place of validPlaces) {
-      const currentYear = place.year;
-      yearLabel.textContent = `${currentYear.toFixed(1)} — ${place.name}`;
-
-      // 更新颜色
-      layers.forEach(({ year, layer, type }) => {
-        if (year !== null && year <= currentYear) {
-          layer.setStyle({
-            color: colorByType(type),
-            fillOpacity: type === 'region' ? 0.5 : 0.8
-          });
+        // 平滑飞行到该点或区域
+        if (p.type === 'region' && p.bounds) {
+          map.flyToBounds(p.bounds, { duration: 2 });
         } else {
-          layer.setStyle({
-            color: '#999',
-            fillOpacity: 0.15
-          });
+          map.flyTo([p.lat, p.lng], 6, { duration: 2 });
         }
-      });
 
-      // 飞行到当前地点
-      map.flyTo([place.lat, place.lng], 6, { duration: 1.5 });
-      await new Promise(r => setTimeout(r, 2000)); // 每步停2秒
+        await sleep(3000); // 每个点停留 3 秒
+      }
+
+      // 播放完后回到总览
+      map.flyTo([30, 110], 4, { duration: 4 });
     }
 
-    // 播放完后展示所有彩色层
-    yearLabel.textContent = "All Journeys";
-    layers.forEach(({ layer, type }) => {
-      layer.setStyle({
-        color: colorByType(type),
-        fillOpacity: type === 'region' ? 0.5 : 0.8
-      });
-    });
-  }
+    function addPlaceToMap(p) {
+      let layer;
+      const popupContent = `<b>${p.name}</b><br>${p.note || ''}${p.year ? `<br><i>${p.year}</i>` : ''}`;
 
-  animateYears();
-}
+      if (p.type === 'point') {
+        layer = L.circleMarker([p.lat, p.lng], {
+          radius: 0,
+          fillColor: '#ff5722',
+          color: '#ff7043',
+          weight: 1,
+          opacity: 0.9,
+          fillOpacity: 0.7
+        }).bindPopup(popupContent);
+        layer.addTo(map);
+        animateCircleGrowth(layer);
 
-initMap();
-</script>
+      } else if (p.type === 'region' && p.bounds) {
+        layer = L.rectangle(p.bounds, {
+          color: '#4caf50',
+          weight: 1,
+          fillOpacity: 0
+        }).bindPopup(popupContent);
+        layer.addTo(map);
+        animateRectangleFade(layer);
+      }
+
+      layers.push(layer);
+    }
+
+    // 圆点动画：半径逐渐增大
+    function animateCircleGrowth(layer) {
+      let radius = 0;
+      const target = 6;
+      const step = 0.4;
+      const interval = setInterval(() => {
+        radius += step;
+        layer.setRadius(radius);
+        if (radius >= target) clearInterval(interval);
+      }, 30);
+    }
+
+    // 区域动画：透明度渐显
+    function animateRectangleFade(layer) {
+      let opacity = 0;
+      const step = 0.05;
+      const interval = setInterval(() => {
+        opacity += step;
+        layer.setStyle({ fillOpacity: opacity * 0.3 });
+        if (opacity >= 1) clearInterval(interval);
+      }, 50);
+    }
+
+    function sleep(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
+  </script>
 </body>
 </html>
