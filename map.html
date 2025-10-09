@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>旅行地图时间线（调试版）</title>
+  <title>旅行地图时间线（圆形版）</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body {
@@ -62,26 +62,14 @@
         const text = await res.text();
 
         try {
-          // 检查是否为合法 JSON
           places = JSON.parse(text);
         } catch (jsonErr) {
           showMessage('❌ JSON 解析失败，请检查文件格式（末尾多余字符？）', true);
-          console.error('JSON 内容：', text.slice(0, 500) + '...');
+          console.error('JSON 内容预览：', text.slice(0, 500) + '...');
           throw jsonErr;
         }
 
-        if (!Array.isArray(places)) {
-          throw new Error('JSON 根节点不是数组');
-        }
-
-        // 基本结构检查
-        for (let i = 0; i < Math.min(places.length, 3); i++) {
-          const p = places[i];
-          if (typeof p.lat !== 'number' || typeof p.lng !== 'number') {
-            console.warn(`第 ${i+1} 条数据可能格式错误：`, p);
-          }
-        }
-
+        if (!Array.isArray(places)) throw new Error('JSON 根节点不是数组');
         showMessage(`✅ 成功加载 ${places.length} 条记录，开始播放动画...`);
         startAnimation();
 
@@ -92,19 +80,15 @@
     }
 
     async function startAnimation() {
-      // 按年份排序
-      places.sort((a, b) => (a.year || 0) - (b.year || 0));
+      // 按年份排序（null 放后面）
+      places.sort((a, b) => (a.year || 9999) - (b.year || 9999));
 
       for (let i = 0; i < places.length; i++) {
         const p = places[i];
         addPlaceToMap(p);
 
-        if (p.type === 'region' && p.bounds) {
-          map.flyToBounds(p.bounds, { duration: 2 });
-        } else {
-          map.flyTo([p.lat, p.lng], 6, { duration: 2 });
-        }
-
+        // 飞行动画
+        map.flyTo([p.lat, p.lng], p.type === 'point' ? 6 : 5, { duration: 2 });
         showMessage(`📍 ${p.name} (${p.year || '未知年份'}) - ${p.note || ''}`);
         await sleep(3000);
       }
@@ -118,6 +102,7 @@
       const popupContent = `<b>${p.name}</b><br>${p.note || ''}${p.year ? `<br><i>${p.year}</i>` : ''}`;
 
       if (p.type === 'point') {
+        // 小圆点
         layer = L.circleMarker([p.lat, p.lng], {
           radius: 0,
           fillColor: '#ff5722',
@@ -129,14 +114,16 @@
         layer.addTo(map);
         animateCircleGrowth(layer);
 
-      } else if (p.type === 'region' && p.bounds) {
-        layer = L.rectangle(p.bounds, {
+      } else if (p.type === 'circle' && p.radius) {
+        // 区域圆形
+        layer = L.circle([p.lat, p.lng], {
+          radius: p.radius * 1000,
           color: '#4caf50',
           weight: 1,
           fillOpacity: 0
         }).bindPopup(popupContent);
         layer.addTo(map);
-        animateRectangleFade(layer);
+        animateRegionFade(layer);
       }
 
       layers.push(layer);
@@ -153,7 +140,7 @@
       }, 30);
     }
 
-    function animateRectangleFade(layer) {
+    function animateRegionFade(layer) {
       let opacity = 0;
       const step = 0.05;
       const interval = setInterval(() => {
