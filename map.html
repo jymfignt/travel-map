@@ -1,20 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Travel Map</title>
-
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-  <link rel="stylesheet" href="css/map.css" />
+  <title>我的旅行地图</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     body, html {
       margin: 0;
+      padding: 0;
       height: 100%;
-      font-family: 'Segoe UI', sans-serif;
+      font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
     }
 
     #map {
@@ -22,77 +19,225 @@
       width: 100%;
     }
 
-    .slider-container {
+    .control-panel {
       position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(255, 255, 255, 0.9);
-      padding: 10px 20px;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      top: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      z-index: 1000;
+      min-width: 250px;
+    }
+
+    .control-panel h3 {
+      margin: 0 0 15px 0;
+      font-size: 1.2rem;
+      color: #333;
+    }
+
+    .year-slider {
+      width: 100%;
+      margin: 10px 0;
+    }
+
+    .year-display {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #4c7dfc;
+      text-align: center;
+      margin: 10px 0;
+    }
+
+    .legend {
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #ddd;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin: 8px 0;
+      font-size: 0.9rem;
+    }
+
+    .legend-color {
+      width: 20px;
+      height: 20px;
+      border-radius: 3px;
+      margin-right: 10px;
+    }
+
+    .legend-point {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      margin-right: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .stats {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #ddd;
+      font-size: 0.85rem;
+      color: #666;
     }
 
     input[type=range] {
-      width: 300px;
+      width: 100%;
+      cursor: pointer;
     }
 
-    #year-label {
-      font-weight: bold;
-      margin-left: 10px;
+    .custom-popup {
+      font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    }
+
+    .custom-popup h4 {
+      margin: 0 0 8px 0;
+      color: #333;
+    }
+
+    .custom-popup p {
+      margin: 4px 0;
+      font-size: 0.9rem;
+      color: #666;
     }
   </style>
 </head>
-
 <body>
   <div id="map"></div>
 
-  <div class="slider-container">
-    <label for="year">Year:</label>
-    <input type="range" id="year" min="2000" max="2025" value="2010" />
-    <span id="year-label">2010</span>
+  <div class="control-panel">
+    <h3>🌍 旅行时间轴</h3>
+    <div class="year-display" id="year-label">全部年份</div>
+    <input type="range" class="year-slider" id="year" min="2005" max="2025" value="2005" step="0.1" />
+    
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-color" style="background: rgba(76, 125, 252, 0.4);"></div>
+        <span>区域范围</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-point" style="background: #ff6b6b;"></div>
+        <span>具体地点</span>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div>总地点数: <strong id="total-places">0</strong></div>
+      <div>已显示: <strong id="visible-places">0</strong></div>
+    </div>
   </div>
 
+  <script src="data/places.js"></script>
   <script>
-    // Initialize map
-    const map = L.map('map').setView([20, 0], 2); // start global view
+    // 初始化地图
+    const map = L.map('map').setView([35, 110], 4);
 
-    // Add tile layer
+    // 添加地图图层
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 18
     }).addTo(map);
 
-    let places = [];
+    const markers = [];
+    const regions = [];
 
-    // Load JSON data
-    fetch('data/places.json')
-      .then(res => res.json())
-      .then(data => {
-        places = data;
-        // Add markers
-        data.forEach(p => {
-          const marker = L.marker([p.lat, p.lng]).addTo(map);
-          marker.bindPopup(`<b>${p.name}</b><br>${p.year}<br>${p.note}`);
+    // 创建标记和区域
+    places.forEach(place => {
+      if (place.type === 'point') {
+        const marker = L.circleMarker([place.lat, place.lng], {
+          radius: 8,
+          fillColor: '#ff6b6b',
+          color: '#fff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8
         });
+        
+        const popupContent = `
+          <div class="custom-popup">
+            <h4>${place.name}</h4>
+            <p><strong>年份:</strong> ${place.year || '未标注'}</p>
+            <p><strong>备注:</strong> ${place.note}</p>
+          </div>
+        `;
+        marker.bindPopup(popupContent);
+        markers.push({ marker, place });
+      } else if (place.type === 'region' && place.bounds) {
+        const rectangle = L.rectangle(place.bounds, {
+          color: '#4c7dfc',
+          weight: 2,
+          fillColor: '#4c7dfc',
+          fillOpacity: 0.3
+        });
+        
+        const popupContent = `
+          <div class="custom-popup">
+            <h4>${place.name}</h4>
+            <p><strong>年份:</strong> ${place.year || '未标注'}</p>
+            <p><strong>备注:</strong> ${place.note}</p>
+          </div>
+        `;
+        rectangle.bindPopup(popupContent);
+        regions.push({ rectangle, place });
+      }
+    });
+
+    // 更新显示
+    function updateDisplay(year) {
+      let visibleCount = 0;
+      
+      // 显示/隐藏点标记
+      markers.forEach(({ marker, place }) => {
+        if (place.year === null || place.year <= year) {
+          if (!map.hasLayer(marker)) {
+            marker.addTo(map);
+          }
+          visibleCount++;
+        } else {
+          if (map.hasLayer(marker)) {
+            map.removeLayer(marker);
+          }
+        }
       });
 
-    // Handle year slider
+      // 显示/隐藏区域
+      regions.forEach(({ rectangle, place }) => {
+        if (place.year === null || place.year <= year) {
+          if (!map.hasLayer(rectangle)) {
+            rectangle.addTo(map);
+          }
+          visibleCount++;
+        } else {
+          if (map.hasLayer(rectangle)) {
+            map.removeLayer(rectangle);
+          }
+        }
+      });
+
+      document.getElementById('visible-places').textContent = visibleCount;
+    }
+
+    // 年份滑块
     const slider = document.getElementById('year');
     const label = document.getElementById('year-label');
 
     slider.addEventListener('input', () => {
-      const year = parseInt(slider.value);
-      label.textContent = year;
-
-      // Find closest place
-      if (places.length > 0) {
-        const nearest = places.reduce((prev, curr) =>
-          Math.abs(curr.year - year) < Math.abs(prev.year - year) ? curr : prev
-        );
-
-        map.flyTo([nearest.lat, nearest.lng], 6, { duration: 1.5 });
-      }
+      const year = parseFloat(slider.value);
+      label.textContent = year.toFixed(1);
+      updateDisplay(year);
     });
+
+    // 初始化显示
+    document.getElementById('total-places').textContent = places.length;
+    updateDisplay(2025);
+    slider.value = 2025;
+    label.textContent = '2025.0';
   </script>
 </body>
 </html>
