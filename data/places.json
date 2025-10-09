@@ -1,4 +1,4 @@
-const places = [
+[
   { "year": 2005.8, "name": "Shijiazhuang", "lat": 38.0428, "lng": 114.5149, "note": "出生地", "type": "point" },
   { "year": null, "name": "Changdao, Yantai", "lat": 37.9164, "lng": 120.7355, "note": "家庭旅游（某年暑假）", "type": "point" },
   { "year": null, "name": "Beijing", "lat": 39.9163, "lng": 116.3972, "note": "暑假游 (Forbidden City, Beihai Park)", "type": "region", "bounds": [[39.4, 115.4], [41.1, 117.5]] },
