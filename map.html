@@ -49,7 +49,7 @@
 
     function highlightPlace(place) {
       if (!place) return;
-      yearLabel.textContent = `${place.year || "未知"} 年`;
+      yearLabel.textContent = `${place.year || "未知"}`;
 
       // 飞到大致中心
       if (place.lat && place.lng)
