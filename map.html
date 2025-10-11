@@ -36,7 +36,7 @@
     }).addTo(map);
 
     // 载入地理边界数据
-    const geoRes = await fetch('data/getBoundaries-CHN-ADM2.geo.json');
+    const geoRes = await fetch('data/getBoundaries-CHN-ADM2.geojson');
     const geoData = await geoRes.json();
 
     // 载入地点数据
