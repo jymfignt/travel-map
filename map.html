@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>旅行地图时间线（圆形区域 + 动画版）</title>
+  <title>旅行地图时间线（区域 + 动画版）</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { height: 100%; margin: 0; padding: 0; }
@@ -25,7 +25,7 @@
 </head>
 <body>
   <div id="map"></div>
-  <div class="note" id="note">🗺 正在加载 data/places.json ...</div>
+  <div class="note" id="note">🗺 正在加载数据 ...</div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
@@ -43,27 +43,37 @@
     }).addTo(map);
 
     let places = [];
+    let geoData = null;
     let layers = [];
 
-    // 加载数据
+    // 同时加载 places.json 和 custom.geo.json
     async function loadData() {
       try {
-        showMessage('📦 正在加载 data/places.json ...');
-        const res = await fetch('data/places.json');
-        if (!res.ok) throw new Error(`HTTP 状态 ${res.status}`);
-        const text = await res.text();
+        showMessage('📦 正在加载 data/places.json 和 custom.geo.json ...');
+        const [placesRes, geoRes] = await Promise.all([
+          fetch('data/places.json'),
+          fetch('data/custom.geo.json')
+        ]);
 
+        const [placesText, geoText] = await Promise.all([
+          placesRes.text(),
+          geoRes.text()
+        ]);
+
+        // 解析 JSON 并校验
         try {
-          places = JSON.parse(text);
-        } catch (jsonErr) {
+          places = JSON.parse(placesText);
+          geoData = JSON.parse(geoText);
+        } catch (err) {
           showMessage('❌ JSON 解析失败，请检查文件格式', true);
-          console.error('JSON 内容（前500字）：', text.slice(0, 500) + '...');
-          throw jsonErr;
+          console.error('❌ JSON 错误:', err);
+          throw err;
         }
 
-        if (!Array.isArray(places)) throw new Error('JSON 根节点不是数组');
+        if (!Array.isArray(places)) throw new Error('places.json 根节点不是数组');
+        if (!geoData.features) throw new Error('custom.geo.json 缺少 features');
 
-        showMessage(`✅ 成功加载 ${places.length} 条记录，开始播放动画...`);
+        showMessage(`✅ 加载成功：${places.length} 条地点记录，${geoData.features.length} 个区域`);
         startAnimation();
       } catch (err) {
         console.error(err);
@@ -73,17 +83,11 @@
 
     // 自动播放动画
     async function startAnimation() {
-      // 按年份排序（无年份的放前）
       places.sort((a, b) => (a.year || 0) - (b.year || 0));
 
       for (let p of places) {
         addPlaceToMap(p);
-
-        // 自动飞行动画
-        if (p.lat && p.lng) {
-          map.flyTo([p.lat, p.lng], 6, { duration: 2 });
-        }
-
+        if (p.lat && p.lng) map.flyTo([p.lat, p.lng], 6, { duration: 2 });
         showMessage(`📍 ${p.name} (${p.year ?? '未知年份'}) - ${p.note ?? ''}`);
         await sleep(3000);
       }
@@ -97,8 +101,19 @@
       let layer;
       const popup = `<b>${p.name}</b><br>${p.note ?? ''}${p.year ? `<br><i>${p.year}</i>` : ''}`;
 
-      // 圆点（单个坐标）
-      if (p.type === 'point') {
+      // 检查是否在 GeoJSON 中有对应区域
+      const matchedFeature = geoData.features.find(f => {
+        const n = f.properties?.name || '';
+        return n.includes(p.name) || p.name.includes(n);
+      });
+
+      if (matchedFeature) {
+        layer = L.geoJSON(matchedFeature, {
+          style: { color: '#ff9800', weight: 2, fillColor: '#ffc107', fillOpacity: 0 }
+        }).bindPopup(popup);
+        layer.addTo(map);
+        animateRegion(layer);
+      } else if (p.type === 'point') {
         layer = L.circleMarker([p.lat, p.lng], {
           radius: 0,
           fillColor: '#ff5722',
@@ -109,13 +124,10 @@
         }).bindPopup(popup);
         layer.addTo(map);
         animatePoint(layer);
-      }
-
-      // 圆形区域（带半径）
-      else if (p.type === 'circle') {
-        const radius = (p.radius || 100) * 1000; // km → m
+      } else if (p.type === 'circle') {
+        const radius = (p.radius || 100) * 1000;
         layer = L.circle([p.lat, p.lng], {
-          radius: radius,
+          radius,
           color: '#4caf50',
           weight: 1,
           fillColor: '#81c784',
