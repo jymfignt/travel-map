@@ -1,172 +1,124 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>旅行地图时间线（区域 + 动画版）</title>
+  <title>Travel Map - 年份自动播放</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body { height: 100%; margin: 0; padding: 0; }
+    html, body { height: 100%; margin: 0; }
     #map { width: 100%; height: 100%; }
-    .note {
-      position: fixed;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
+    .leaflet-popup-content { font-size: 14px; }
+    .year-label {
+      position: absolute;
+      top: 20px;
+      right: 40px;
       background: rgba(0,0,0,0.6);
-      color: white;
-      padding: 6px 10px;
+      color: #fff;
+      padding: 8px 14px;
       border-radius: 8px;
-      font-size: 14px;
-      font-family: sans-serif;
-      z-index: 1000;
+      font-size: 18px;
+      z-index: 999;
+      font-family: "Microsoft YaHei", sans-serif;
     }
-    .error { background: rgba(255, 0, 0, 0.8); }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div class="note" id="note">🗺 正在加载数据 ...</div>
+  <div id="year-label" class="year-label">加载中...</div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const note = document.getElementById('note');
-    function showMessage(msg, isError = false) {
-      note.textContent = msg;
-      note.className = 'note' + (isError ? ' error' : '');
-      console.log(msg);
-    }
+  async function initMap() {
+    const map = L.map('map').setView([30, 110], 4);
 
-    // 初始化地图
-    const map = L.map('map', { zoomControl: false }).setView([30, 110], 4);
+    // 加载底图
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 10,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    let places = [];
-    let geoData = null;
-    let layers = [];
-
-    // 同时加载 places.json 和 custom.geo.json
-    async function loadData() {
-      try {
-        showMessage('📦 正在加载 data/places.json 和 custom.geo.json ...');
-        const [placesRes, geoRes] = await Promise.all([
-          fetch('data/places.json'),
-          fetch('data/custom.geo.json')
-        ]);
-
-        const [placesText, geoText] = await Promise.all([
-          placesRes.text(),
-          geoRes.text()
-        ]);
-
-        // 解析 JSON 并校验
-        try {
-          places = JSON.parse(placesText);
-          geoData = JSON.parse(geoText);
-        } catch (err) {
-          showMessage('❌ JSON 解析失败，请检查文件格式', true);
-          console.error('❌ JSON 错误:', err);
-          throw err;
+    // 加载地理边界
+    try {
+      const geoRes = await fetch('data/custom.geo.json');
+      const geoData = await geoRes.json();
+      L.geoJSON(geoData, {
+        style: {
+          color: "#999",
+          weight: 1,
+          fillOpacity: 0.05
         }
+      }).addTo(map);
+    } catch (err) {
+      console.error("无法加载 custom.geo.json:", err);
+    }
 
-        if (!Array.isArray(places)) throw new Error('places.json 根节点不是数组');
-        if (!geoData.features) throw new Error('custom.geo.json 缺少 features');
+    // 加载地点数据
+    const res = await fetch('data/places.json');
+    const places = await res.json();
 
-        showMessage(`✅ 加载成功：${places.length} 条地点记录，${geoData.features.length} 个区域`);
-        startAnimation();
-      } catch (err) {
-        console.error(err);
-        showMessage('❌ 数据加载失败: ' + err.message, true);
+    // 检查数据
+    console.log("已加载地点数:", places.length);
+    console.log(places.slice(0,3));
+
+    // 按年份排序
+    places.sort((a, b) => (a.year || 0) - (b.year || 0));
+
+    const yearLabel = document.getElementById("year-label");
+    const regionLayers = [];
+    const pointLayers = [];
+
+    let i = 0;
+
+    function highlightPlace(place) {
+      if (!place) return;
+
+      // 年份标签
+      if (place.year) yearLabel.textContent = `${place.year} 年`;
+      else yearLabel.textContent = "未注明年份";
+
+      // 显示到地图中心
+      map.flyTo([place.lat, place.lng], 6, { duration: 2 });
+
+      // 根据类型绘制
+      if (place.type === "region") {
+        const color = `hsl(${(i * 45) % 360}, 70%, 60%)`;
+        const polygon = L.circle([place.lat, place.lng], {
+          radius: (place.radius || 80) * 1000,
+          color,
+          fillColor: color,
+          fillOpacity: 0.35,
+          weight: 1.5
+        }).addTo(map);
+        polygon.bindPopup(`<b>${place.name}</b><br>${place.note || ""}`);
+        regionLayers.push(polygon);
+      } else {
+        const marker = L.circleMarker([place.lat, place.lng], {
+          radius: 6,
+          color: "#FF6F61",
+          fillColor: "#FF6F61",
+          fillOpacity: 0.9
+        }).addTo(map);
+        marker.bindPopup(`<b>${place.name}</b><br>${place.note || ""}`);
+        pointLayers.push(marker);
       }
     }
 
     // 自动播放动画
-    async function startAnimation() {
-      places.sort((a, b) => (a.year || 0) - (b.year || 0));
-
-      for (let p of places) {
-        addPlaceToMap(p);
-        if (p.lat && p.lng) map.flyTo([p.lat, p.lng], 6, { duration: 2 });
-        showMessage(`📍 ${p.name} (${p.year ?? '未知年份'}) - ${p.note ?? ''}`);
-        await sleep(3000);
+    function autoPlay() {
+      if (i >= places.length) {
+        yearLabel.textContent = "播放结束";
+        return;
       }
-
-      map.flyTo([30, 110], 4, { duration: 4 });
-      showMessage('🎉 播放结束！');
+      const place = places[i];
+      highlightPlace(place);
+      i++;
+      setTimeout(autoPlay, 3000);
     }
 
-    // 添加地点到地图
-    function addPlaceToMap(p) {
-      let layer;
-      const popup = `<b>${p.name}</b><br>${p.note ?? ''}${p.year ? `<br><i>${p.year}</i>` : ''}`;
+    autoPlay();
+  }
 
-      // 检查是否在 GeoJSON 中有对应区域
-      const matchedFeature = geoData.features.find(f => {
-        const n = f.properties?.name || '';
-        return n.includes(p.name) || p.name.includes(n);
-      });
-
-      if (matchedFeature) {
-        layer = L.geoJSON(matchedFeature, {
-          style: { color: '#ff9800', weight: 2, fillColor: '#ffc107', fillOpacity: 0 }
-        }).bindPopup(popup);
-        layer.addTo(map);
-        animateRegion(layer);
-      } else if (p.type === 'point') {
-        layer = L.circleMarker([p.lat, p.lng], {
-          radius: 0,
-          fillColor: '#ff5722',
-          color: '#ff7043',
-          weight: 1,
-          opacity: 0.9,
-          fillOpacity: 0.7
-        }).bindPopup(popup);
-        layer.addTo(map);
-        animatePoint(layer);
-      } else if (p.type === 'circle') {
-        const radius = (p.radius || 100) * 1000;
-        layer = L.circle([p.lat, p.lng], {
-          radius,
-          color: '#4caf50',
-          weight: 1,
-          fillColor: '#81c784',
-          fillOpacity: 0
-        }).bindPopup(popup);
-        layer.addTo(map);
-        animateRegion(layer);
-      }
-
-      layers.push(layer);
-    }
-
-    // 动画函数：点的生长
-    function animatePoint(layer) {
-      let r = 0;
-      const target = 6, step = 0.4;
-      const timer = setInterval(() => {
-        r += step;
-        layer.setRadius(r);
-        if (r >= target) clearInterval(timer);
-      }, 30);
-    }
-
-    // 动画函数：区域淡入
-    function animateRegion(layer) {
-      let op = 0;
-      const step = 0.05;
-      const timer = setInterval(() => {
-        op += step;
-        layer.setStyle({ fillOpacity: op * 0.4 });
-        if (op >= 1) clearInterval(timer);
-      }, 50);
-    }
-
-    function sleep(ms) {
-      return new Promise(r => setTimeout(r, ms));
-    }
-
-    loadData();
+  initMap();
   </script>
 </body>
 </html>
